@@ -3,13 +3,142 @@
 #include "ds3231.h"
 #include "rtc_ds3231.h"
 
+#include <Adafruit_NeoPixel.h>
+#include <avr/power.h>
+#define PIN 7
+
+// Parameter 1 = number of pixels in strip
+// Parameter 2 = Arduino pin number (most are valid)
+// Parameter 3 = pixel type flags, add together as needed:
+//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
+//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
+//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
+//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(60, PIN, NEO_GRB + NEO_KHZ800);
+
+
+
+
+
 #define BUFF_MAX 128
+//#define SERIAL_OUTPUT
 
 uint8_t time[8];
 char recv[BUFF_MAX];
 unsigned int recv_size = 0;
-unsigned long prev, interval = 5000;
+unsigned long prev, interval = 1000;
+struct ts t;
 
+struct _customtime {
+  unsigned int uihour;
+  unsigned int uiminute;
+};
+
+_customtime _Sleepy_time;
+_customtime _Wakeup_time;
+_customtime _Sleepy_time_W;
+_customtime _Wakeup_time_W;
+_customtime _Sleepy_time_WE;
+_customtime _Wakeup_time_WE;
+
+bool bIsItWeekEnd;
+bool bSleepy_activated;
+bool bTurnOnLED;
+bool bDSTOn;
+void MAJSleepAndWakeHours()
+{
+#ifdef SERIAL_OUTPUT
+  Serial.println("MAJSleepAndWakeHours\n");
+#endif
+  
+  if ((t.wday == 6)||(t.wday == 7))
+  {
+    _Sleepy_time.uihour=_Sleepy_time_WE.uihour;
+    _Sleepy_time.uiminute=_Sleepy_time_WE.uiminute;
+    _Wakeup_time.uihour=_Wakeup_time_WE.uihour;
+    _Wakeup_time.uiminute=_Wakeup_time_WE.uiminute;
+  }
+  else
+  {
+
+    _Sleepy_time.uihour=_Sleepy_time_W.uihour;
+    _Sleepy_time.uiminute=_Sleepy_time_W.uiminute;
+    _Wakeup_time.uihour=_Wakeup_time_W.uihour;
+    _Wakeup_time.uiminute=_Wakeup_time_W.uiminute;
+
+  }
+}
+void IsSleepyOrWakeUpTime()
+{
+  if ((bSleepy_activated==false) && ((t.hour == _Sleepy_time.uihour) && (t.min >= _Sleepy_time.uiminute)))
+  {
+    //Allumer la lumière de nuit
+
+    bSleepy_activated = true;
+#ifdef SERIAL_OUTPUT
+    Serial.println("Allumer la lumière de nuit");
+#endif
+
+  }
+  else if ((bSleepy_activated==true) && ((t.hour == _Wakeup_time.uihour) && (t.min >= _Wakeup_time.uiminute)))
+  {
+    //Allumer la lumière de jour
+
+    bSleepy_activated = false;
+    MAJSleepAndWakeHours();
+#ifdef SERIAL_OUTPUT
+    Serial.println("Allumer la lumière de réveil");
+#endif
+
+  }
+
+  /*if ((bSleepy_activated==false) && ((hour() >= _Wakeup_time.uihour+2) && ((hour() <= _Sleepy_time.uihour-2)&&(minute() >= _Sleepy_time.uiminute))))
+  {
+    bTurnOnLED = false;
+    Serial.println("eteindre la LED");
+  }
+  else
+  {
+    bTurnOnLED = true;
+    Serial.println("Allumer la LED");
+  }*/
+
+
+
+
+}
+
+// Fill the dots one after the other with a color
+void colorWipe(uint32_t c, uint8_t wait) {
+  for(uint16_t i=0; i<strip.numPixels(); i++) {
+      strip.setPixelColor(i, c);
+      strip.show();
+      delay(wait);
+  }
+}
+
+void setLED(bool bSleepy_Mode)
+{
+  if (bSleepy_Mode == true)
+  {
+
+    colorWipe(strip.Color(0, 1, 150), 50);
+
+  }
+  else
+  {
+
+    if (bTurnOnLED == true)
+    {
+      colorWipe(strip.Color(150, 20, 20), 50);
+    }
+    else
+    {
+     colorWipe(strip.Color(0, 0, 0), 50);
+    }
+
+  }
+}
 void setup()
 {
     Serial.begin(9600);
@@ -17,6 +146,40 @@ void setup()
     DS3231_init(DS3231_INTCN);
     memset(recv, 0, BUFF_MAX);
     Serial.println("GET time");
+	
+	strip.begin();
+	strip.show(); // Initialize all pixels to 'off'
+	
+	_Sleepy_time_W.uihour=20;
+	_Sleepy_time_W.uiminute=30;
+	_Wakeup_time_W.uihour=7;
+	_Wakeup_time_W.uiminute=30;
+
+	_Sleepy_time_WE.uihour=21;
+	_Sleepy_time_WE.uiminute=00;
+	_Wakeup_time_WE.uihour=8;
+	_Wakeup_time_WE.uiminute=30;
+	
+	bSleepy_activated = false;
+	bTurnOnLED = true;
+	MAJSleepAndWakeHours();
+	if ((t.hour >= _Sleepy_time.uihour) || (t.hour <= _Wakeup_time.uihour))
+  {
+    bSleepy_activated = true;
+
+#ifdef SERIAL_OUTPUT
+    Serial.println("Allumer la lumière de nuit");
+#endif
+  }
+  else
+  {
+    bSleepy_activated = false;
+
+#ifdef SERIAL_OUTPUT
+    Serial.println("Allumer la lumière de réveil");
+#endif
+  }
+  setLED(bSleepy_activated);
 }
 
 void loop()
@@ -24,22 +187,14 @@ void loop()
     char in;
     char buff[BUFF_MAX];
     unsigned long now = millis();
-    struct ts t;
+    
 
     // show time once in a while
     if ((now - prev > interval) && (Serial.available() <= 0)) {
         DS3231_get(&t);
-
-        // there is a compile time option in the library to include unixtime support
-#ifdef CONFIG_UNIXTIME
-        snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d %ld", t.year,
-             t.mon, t.mday, t.hour, t.min, t.sec, t.unixtime);
-#else
-        snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,
-             t.mon, t.mday, t.hour, t.min, t.sec);
-#endif
-
-        Serial.println(buff);
+		IsSleepyOrWakeUpTime();
+		setLED(bSleepy_activated);
+        
         prev = now;
     }
 
@@ -133,6 +288,21 @@ void parse_cmd(char *cmd, int cmdsize)
     } else if (cmd[0] == 83 && cmdsize == 1) {  // "S" - get status register
         Serial.print("status reg is ");
         Serial.println(DS3231_get_sreg(), DEC);
+	} else if (cmd[0] == 84 && cmdsize == 1) {  // "T" - display
+        snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,
+             t.mon, t.mday, t.hour, t.min, t.sec);
+        Serial.println(buff);
+	} else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clock Configuration
+  		snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n:", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
+        Serial.println(buff);
+    } else if (cmd[0] == 86 && cmdsize == 6) {  // "W" Set Sleep W
+        //VWMMHH
+        /*for (i = 0; i < 4; i++) {
+            time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
+        }
+        */
+        
+        Serial.println(buff);        
     } else {
         Serial.print("unknown command prefix ");
         Serial.println(cmd[0]);
