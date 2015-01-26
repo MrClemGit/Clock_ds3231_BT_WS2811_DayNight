@@ -14,10 +14,7 @@
 //   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(60, PIN, NEO_GRB + NEO_KHZ800);
-
-
-
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, PIN, NEO_GRB + NEO_KHZ800);
 
 
 #define BUFF_MAX 128
@@ -48,11 +45,12 @@ bool bDSTOn;
 void MAJSleepAndWakeHours()
 {
 #ifdef SERIAL_OUTPUT
-  Serial.println("MAJSleepAndWakeHours\n");
+  Serial.println("MAJSleepAndWakeHours");
 #endif
   
   if ((t.wday == 6)||(t.wday == 7))
   {
+    bIsItWeekEnd = true;
     _Sleepy_time.uihour=_Sleepy_time_WE.uihour;
     _Sleepy_time.uiminute=_Sleepy_time_WE.uiminute;
     _Wakeup_time.uihour=_Wakeup_time_WE.uihour;
@@ -60,7 +58,7 @@ void MAJSleepAndWakeHours()
   }
   else
   {
-
+    bIsItWeekEnd = false;
     _Sleepy_time.uihour=_Sleepy_time_W.uihour;
     _Sleepy_time.uiminute=_Sleepy_time_W.uiminute;
     _Wakeup_time.uihour=_Wakeup_time_W.uihour;
@@ -70,6 +68,9 @@ void MAJSleepAndWakeHours()
 }
 void IsSleepyOrWakeUpTime()
 {
+  #ifdef SERIAL_OUTPUT
+    Serial.println("IsSleepyOrWakeUpTime");
+#endif
   if ((bSleepy_activated==false) && ((t.hour == _Sleepy_time.uihour) && (t.min >= _Sleepy_time.uiminute)))
   {
     //Allumer la lumière de nuit
@@ -122,7 +123,7 @@ void setLED(bool bSleepy_Mode)
   if (bSleepy_Mode == true)
   {
 
-    colorWipe(strip.Color(0, 1, 150), 50);
+    colorWipe(strip.Color(0, 1, 150),0);
 
   }
   else
@@ -130,11 +131,11 @@ void setLED(bool bSleepy_Mode)
 
     if (bTurnOnLED == true)
     {
-      colorWipe(strip.Color(150, 20, 20), 50);
+      colorWipe(strip.Color(150, 20, 20), 0);
     }
     else
     {
-     colorWipe(strip.Color(0, 0, 0), 50);
+     colorWipe(strip.Color(0, 0, 0), 0);
     }
 
   }
@@ -146,7 +147,7 @@ void setup()
     DS3231_init(DS3231_INTCN);
     memset(recv, 0, BUFF_MAX);
     Serial.println("GET time");
-	
+    DS3231_get(&t);
 	strip.begin();
 	strip.show(); // Initialize all pixels to 'off'
 	
@@ -163,7 +164,7 @@ void setup()
 	bSleepy_activated = false;
 	bTurnOnLED = true;
 	MAJSleepAndWakeHours();
-	if ((t.hour >= _Sleepy_time.uihour) || (t.hour <= _Wakeup_time.uihour))
+if ((t.hour >= _Sleepy_time.uihour) || (t.hour <= _Wakeup_time.uihour))
   {
     bSleepy_activated = true;
 
@@ -194,6 +195,12 @@ void loop()
         DS3231_get(&t);
 		IsSleepyOrWakeUpTime();
 		setLED(bSleepy_activated);
+
+ /*snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,
+             t.mon, t.mday, t.hour, t.min, t.sec);
+
+
+        Serial.println(buff);*/
         
         prev = now;
     }
@@ -224,7 +231,7 @@ void parse_cmd(char *cmd, int cmdsize)
     uint8_t i;
     uint8_t reg_val;
     char buff[BUFF_MAX];
-    struct ts t;
+    
 
     //snprintf(buff, BUFF_MAX, "cmd was '%s' %d\n", cmd, cmdsize);
     //Serial.print(buff);
@@ -293,7 +300,7 @@ void parse_cmd(char *cmd, int cmdsize)
              t.mon, t.mday, t.hour, t.min, t.sec);
         Serial.println(buff);
 	} else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clock Configuration
-  		snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n:", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
+  		snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
         Serial.println(buff);
     } else if (cmd[0] == 86 && cmdsize == 6) {  // "W" Set Sleep W
         //VWMMHH
