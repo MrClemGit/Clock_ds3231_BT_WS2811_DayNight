@@ -343,6 +343,21 @@ void parse_cmd(char *cmd, int cmdsize)
   else if (cmd[0] == 71 && cmdsize == 1) {  // "G" - set aging status register
     DS3231_set_aging(0);
   }
+  else if (cmd[0] == 72 && cmdsize == 2) {  // "H" - set night/day mode
+    if(cmd[1]== '1')
+    {
+      Serial.print("Manually Sleep activated\n");
+      bSleepy_activated = true; 
+      setLED(bSleepy_activated); 
+    }
+  else 
+  {
+    Serial.print("Manually wakeUp activated\n");  
+    bSleepy_activated = false; 
+      setLED(bSleepy_activated);
+  }
+  
+  }
   else if (cmd[0] == 83 && cmdsize == 1) {  // "S" - get status register
     Serial.print("status reg is ");
     Serial.println(DS3231_get_sreg(), DEC);
@@ -356,7 +371,8 @@ void parse_cmd(char *cmd, int cmdsize)
     snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
-  else if ((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 68)) && cmdsize <= 12) {  // "VWD" Set Sleep W
+  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 68)) && cmdsize <= 12)
+  {  // "VWD" Set Sleep W
     Serial.print("Set the Week Days Clock ");
     //VWDWMMHHSMMHH WD : Week Day W : WakeUp S: Sleep 
     /*for (i = 0; i < 4; i++) {
@@ -369,7 +385,7 @@ void parse_cmd(char *cmd, int cmdsize)
 
     Serial.println(buff);
   }
-  else if ((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 69)) && cmdsize <= 12) {  // "VWE" Set Sleep WE
+  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 69)) && cmdsize <= 12) {  // "VWE" Set Sleep WE
     Serial.print("Set the Week End Clock ");
     //VWEMMHHSMMHH WE : Week End W : WakeUp S: Sleep
     /*for (i = 0; i < 4; i++) {
