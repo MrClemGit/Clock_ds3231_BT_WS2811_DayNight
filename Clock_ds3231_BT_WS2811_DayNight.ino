@@ -25,14 +25,15 @@ char recv[BUFF_MAX];
 unsigned int recv_size = 0;
 unsigned long prev, interval = 1000;
 struct ts t;
-
+/*typedef enum TypeClock eTypeClock
 enum TypeClock{
 	eNone,
 	eWeek,
 	eWeekEnd,
 	eAllClock
-};
+};*/
 
+//typedef struct _customtime _Tcustomtime
 struct _customtime {
   unsigned int uihour;
   unsigned int uiminute;
@@ -183,9 +184,9 @@ void setLED(bool bSleepy_Mode)
   }
 }
 
-void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpClock,TypeClock iType)
+void setNewSleepAndWakeHours(struct _customtime iNewSleepClock,struct _customtime iNewWakeUpClock/*,eTypeClock iType*/)
 {
-	if (iType == eWeek)
+	/*if (iType == eWeek)
 	{
 	
 		_Sleepy_time_W.uihour=iNewSleepClock.uihour;
@@ -210,8 +211,8 @@ void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpCl
 	
 	}
 	MAJSleepAndWakeHours();
-{
 
+*/
 }
 void setup()
 {
