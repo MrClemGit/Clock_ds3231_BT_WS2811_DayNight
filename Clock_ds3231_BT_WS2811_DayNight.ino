@@ -26,6 +26,13 @@ unsigned int recv_size = 0;
 unsigned long prev, interval = 1000;
 struct ts t;
 
+enum TypeClock{
+	eNone,
+	eWeek,
+	eWeekEnd,
+	eAllClock
+};
+
 struct _customtime {
   unsigned int uihour;
   unsigned int uiminute;
@@ -174,6 +181,37 @@ void setLED(bool bSleepy_Mode)
     }
 
   }
+}
+
+void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpClock,TypeClock iType)
+{
+	if (iType == eWeek)
+	{
+	
+		_Sleepy_time_W.uihour=iNewSleepClock.uihour;
+    	_Sleepy_time_W.uiminute=iNewSleepClock.uiminute;
+    	_Wakeup_time_W.uihour=iNewWakeUpClock.uihour;
+    	_Wakeup_time_W.uiminute=iNewWakeUpClock.uiminute;
+  }
+	
+	}
+	else if (iType == eWeekEnd)
+	{
+	
+		_Sleepy_time_WE.uihour=iNewSleepClock.uihour;
+    	_Sleepy_time_WE.uiminute=iNewSleepClock.uiminute;
+    	_Wakeup_time_WE.uihour=iNewWakeUpClock.uihour;
+    	_Wakeup_time_WE.uiminute=iNewWakeUpClock.uiminute;
+	
+	}
+	else
+	{
+	
+	
+	}
+	MAJSleepAndWakeHours();
+{
+
 }
 void setup()
 {
@@ -367,7 +405,7 @@ void parse_cmd(char *cmd, int cmdsize)
     t.mon, t.mday, t.hour, t.min, t.sec);
     Serial.println(buff);
   }
-  else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clock Configuration
+  else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clocks Configuration
     snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
