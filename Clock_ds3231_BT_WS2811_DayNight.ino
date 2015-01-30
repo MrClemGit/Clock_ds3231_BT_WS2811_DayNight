@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "ds3231.h"
 #include "rtc_ds3231.h"
+#include "common.h"
 
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
@@ -26,10 +27,6 @@ unsigned int recv_size = 0;
 unsigned long prev, interval = 1000;
 struct ts t;
 
-struct _customtime {
-  unsigned int uihour;
-  unsigned int uiminute;
-};
 
 _customtime _Sleepy_time;
 _customtime _Wakeup_time;
@@ -175,6 +172,48 @@ void setLED(bool bSleepy_Mode)
 
   }
 }
+
+void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpClock,eTypeClock iType)
+{
+#ifdef SERIAL_OUTPUT
+  Serial.println("setNewSleepAndWakeHours");
+#endif
+
+  if (iType == eWeek)
+  {
+#ifdef SERIAL_OUTPUT
+    Serial.println("Mise à jour des heures de réveil de la semaine");
+#endif
+    _Sleepy_time_W.uihour=iNewSleepClock.uihour;
+    _Sleepy_time_W.uiminute=iNewSleepClock.uiminute;
+    _Wakeup_time_W.uihour=iNewWakeUpClock.uihour;
+    _Wakeup_time_W.uiminute=iNewWakeUpClock.uiminute;
+
+  }
+  else if (iType == eWeekEnd)
+  {
+#ifdef SERIAL_OUTPUT
+    Serial.println("Mise à jour des heures de réveil du WE");
+#endif
+
+    _Sleepy_time_WE.uihour=iNewSleepClock.uihour;
+    _Sleepy_time_WE.uiminute=iNewSleepClock.uiminute;
+    _Wakeup_time_WE.uihour=iNewWakeUpClock.uihour;
+    _Wakeup_time_WE.uiminute=iNewWakeUpClock.uiminute;
+
+  }
+  else
+  {
+
+
+  }
+  
+  //Set EEPROM with the new sleep configuration
+  
+  MAJSleepAndWakeHours();
+
+
+}
 void setup()
 {
   Serial.begin(9600);
@@ -185,6 +224,12 @@ void setup()
   DS3231_get(&t);
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
+
+  //Reading the EEPROM to get the last sleep configuration.
+  
+  
+  
+  //else default value;
 
   _Sleepy_time_W.uihour=20;
   _Sleepy_time_W.uiminute=30;
@@ -307,7 +352,7 @@ void parse_cmd(char *cmd, int cmdsize)
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // ss, mm, hh, dd
     }
     boolean flags[5] = {
-      0, 0, 0, 0, 0     };
+      0, 0, 0, 0, 0         };
     DS3231_set_a1(time[0], time[1], time[2], time[3], flags);
     DS3231_get_a1(&buff[0], 59);
     Serial.println(buff);
@@ -319,7 +364,7 @@ void parse_cmd(char *cmd, int cmdsize)
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
     }
     boolean flags[5] = {
-      0, 0, 0, 0     };
+      0, 0, 0, 0         };
     DS3231_set_a2(time[0], time[1], time[2], flags);
     DS3231_get_a2(&buff[0], 59);
     Serial.println(buff);
@@ -347,16 +392,16 @@ void parse_cmd(char *cmd, int cmdsize)
     if(cmd[1]== '1')
     {
       Serial.print("Manually Sleep activated\n");
-      bSleepy_activated = true; 
-      setLED(bSleepy_activated); 
-    }
-  else 
-  {
-    Serial.print("Manually wakeUp activated\n");  
-    bSleepy_activated = false; 
+      bSleepy_activated = true;
       setLED(bSleepy_activated);
-  }
-  
+    }
+    else
+    {
+      Serial.print("Manually wakeUp activated\n");
+      bSleepy_activated = false;
+      setLED(bSleepy_activated);
+    }
+
   }
   else if (cmd[0] == 83 && cmdsize == 1) {  // "S" - get status register
     Serial.print("status reg is ");
@@ -367,41 +412,45 @@ void parse_cmd(char *cmd, int cmdsize)
     t.mon, t.mday, t.hour, t.min, t.sec);
     Serial.println(buff);
   }
-  else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clock Configuration
+  else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clocks Configuration
     snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
-  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 68)) && cmdsize <= 12)
+  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 68)) && cmdsize <= 13)
   {  // "VWD" Set Sleep W
     Serial.print("Set the Week Days Clock ");
-    //VWDWMMHHSMMHH WD : Week Day W : WakeUp S: Sleep 
-    /*for (i = 0; i < 4; i++) {
-     time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
-     }
-     */
-     
-     
-     //VWEMMHHSMMHH WE : Week End W : WakeUp S: Sleep
+    _customtime l_Sleep;
+    _customtime l_WakeUp;
+    eTypeClock l_TypeClock = eNone;
 
+    if (cmd[2]=='D')//VWDWMMHHSMMHH WD : Week Day W : WakeUp S: Sleep
+      l_TypeClock = eWeek;
+    else if (cmd[2]=='E')//VWEWMMHHSMMHH WE : Week End W : WakeUp S: Sleep
+      l_TypeClock = eWeekEnd;
+    else
+      l_TypeClock = eNone;
+
+    for (i = 0; i < 2; i++) {
+      time[i] = (cmd[2 * i + 4] - 48) * 10 + cmd[2 * i + 4] - 48; // mm, hh
+    }
+
+    for (i = 0; i < 2; i++) {
+      time[i+2] = (cmd[2 * i + 9] - 48) * 10 + cmd[2 * i + 10] - 48; // mm, hh
+    }
+    l_Sleep.uiminute = time[2];
+    l_Sleep.uihour = time[3];
+    l_WakeUp.uiminute = time[0];
+    l_WakeUp.uihour = time[1];
+
+    setNewSleepAndWakeHours(l_Sleep,l_WakeUp,l_TypeClock);
     Serial.println(buff);
   }
-  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 69)) && cmdsize <= 12) {  // "VWE" Set Sleep WE
-    Serial.print("Set the Week End Clock ");
-    //VWEMMHHSMMHH WE : Week End W : WakeUp S: Sleep
-    /*for (i = 0; i < 4; i++) {
-     time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
-     }
-     */
-     
-     
-     
 
-    Serial.println(buff);
-  }
   else {
     Serial.print("unknown command prefix ");
     Serial.println(cmd[0]);
     Serial.println(cmd[0], DEC);
   }
 }
+
 
