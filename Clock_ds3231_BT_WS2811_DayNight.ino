@@ -3,6 +3,10 @@
 #include "ds3231.h"
 #include "rtc_ds3231.h"
 #include "common.h"
+#include <extEEPROM.h>    //http://github.com/JChristensen/extEEPROM/tree/dev
+
+
+
 
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
@@ -155,7 +159,11 @@ void setLED(bool bSleepy_Mode)
   if (bSleepy_Mode == true)
   {
 
-    colorWipe(strip.Color(0, 1, 150),0);
+    //colorWipe(strip.Color(0, 1, 150),0);
+    
+    strip.setPixelColor(0, strip.Color(0, 1, 150)); // Moderately bright green color.
+
+    strip.show(); // This sends the updated pixel color to the hardware.
 
   }
   else
@@ -163,7 +171,10 @@ void setLED(bool bSleepy_Mode)
 
     if (bTurnOnLED == true)
     {
-      colorWipe(strip.Color(150, 20, 20), 0);
+      //colorWipe(strip.Color(150, 20, 20), 0);
+      strip.setPixelColor(0, strip.Color(150, 20, 20)); // Moderately bright green color.
+
+      strip.show(); // This sends the updated pixel color to the hardware.
     }
     else
     {
@@ -221,6 +232,51 @@ void setup()
   DS3231_init(DS3231_INTCN);
   memset(recv, 0, BUFF_MAX);
   Serial.println("GET time");
+  
+  //  
+/*  extEEPROM myEEPROM(kbits_32, 1, 4,0x57);
+byte i2cStat = myEEPROM.begin(twiClock400kHz);
+if ( i2cStat != 0 ) {
+    Serial.println("ERROR EEPROM");
+    Serial.println(i2cStat,DEC);
+}
+else
+  Serial.println("EEPROM OK");
+  
+  byte myData[10];
+  myData[0] = 0x12;
+  myData[1] = 0x34;
+//write 10 bytes starting at location 42
+ i2cStat = myEEPROM.write(1, myData, 2);
+if ( i2cStat != 0 ) {
+    //there was a problem
+    if ( i2cStat == EEPROM_ADDR_ERR) {
+        Serial.println("Write EEPROM Bad addr");
+    }
+    else {
+        //
+        Serial.println("Write some other I2C error");
+    }
+}
+
+byte myDataR[10];
+memset(myDataR,'\0',10);
+//read 10 bytes starting at location 42
+ i2cStat = myEEPROM.read(1, myDataR, 2);
+if ( i2cStat != 0 ) {
+    //there was a problem
+    if ( i2cStat == EEPROM_ADDR_ERR) {
+         Serial.println("Read EEPROM Bad addr");
+    }
+    else {
+        Serial.println("Read some other I2C error");
+    }
+}
+Serial.println(myDataR[0],HEX);  
+Serial.println(myDataR[1],HEX);  
+*/  
+  
+  
   DS3231_get(&t);
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
