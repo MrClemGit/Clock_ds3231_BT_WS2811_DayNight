@@ -176,13 +176,13 @@ void setLED(bool bSleepy_Mode)
 void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpClock,eTypeClock iType)
 {
 #ifdef SERIAL_OUTPUT
-  Serial.println("setNewSleepAndWakeHours");
+  Serial.println("setNewSleepAndWakeHours\n");
 #endif
 
   if (iType == eWeek)
   {
 #ifdef SERIAL_OUTPUT
-    Serial.println("Mise à jour des heures de réveil de la semaine");
+    Serial.println("Mise à jour des heures de réveil de la semaine\n");
 #endif
     _Sleepy_time_W.uihour=iNewSleepClock.uihour;
     _Sleepy_time_W.uiminute=iNewSleepClock.uiminute;
@@ -193,7 +193,7 @@ void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpCl
   else if (iType == eWeekEnd)
   {
 #ifdef SERIAL_OUTPUT
-    Serial.println("Mise à jour des heures de réveil du WE");
+    Serial.println("Mise à jour des heures de réveil du WE\n");
 #endif
 
     _Sleepy_time_WE.uihour=iNewSleepClock.uihour;
@@ -416,9 +416,9 @@ void parse_cmd(char *cmd, int cmdsize)
     snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
-  else if (((cmd[0] == 86)&&(cmd[1] == 87)&&(cmd[2] == 68)) && cmdsize <= 13)
+  else if (((cmd[0] == 86)&&(cmd[1] == 87)) && cmdsize <= 13)
   {  // "VWD" Set Sleep W
-    Serial.print("Set the Week Days Clock ");
+    Serial.print("Set the Week Days Clock\n ");
     _customtime l_Sleep;
     _customtime l_WakeUp;
     eTypeClock l_TypeClock = eNone;
@@ -431,7 +431,7 @@ void parse_cmd(char *cmd, int cmdsize)
       l_TypeClock = eNone;
 
     for (i = 0; i < 2; i++) {
-      time[i] = (cmd[2 * i + 4] - 48) * 10 + cmd[2 * i + 4] - 48; // mm, hh
+      time[i] = (cmd[2 * i + 4] - 48) * 10 + cmd[2 * i + 5] - 48; // mm, hh
     }
 
     for (i = 0; i < 2; i++) {
@@ -443,6 +443,7 @@ void parse_cmd(char *cmd, int cmdsize)
     l_WakeUp.uihour = time[1];
 
     setNewSleepAndWakeHours(l_Sleep,l_WakeUp,l_TypeClock);
+    snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
 
