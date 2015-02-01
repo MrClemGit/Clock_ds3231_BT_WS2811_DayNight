@@ -43,6 +43,187 @@ bool bIsItWeekEnd;
 bool bSleepy_activated;
 bool bTurnOnLED;
 bool bDSTOn;
+//CRC-8 - based on the CRC8 formulas by Dallas/Maxim
+//code released under the therms of the GNU GPL 3.0 license
+byte CRC8(const byte *data, byte len) {
+  byte crc = 0x00;
+  while (len--) {
+    byte extract = *data++;
+    for (byte tempI = 8; tempI; tempI--) {
+      byte sum = (crc ^ extract) & 0x01;
+      crc >>= 1;
+      if (sum) {
+        crc ^= 0x8C;
+      }
+      extract >>= 1;
+    }
+  }
+  return crc;
+}
+
+//EEPROM functions
+bool SetConfigurationToEEPROM()
+{
+  bool l_bstatus=false;
+
+  extEEPROM myEEPROM(kbits_32, 1, 4,0x57);
+  byte i2cStat = myEEPROM.begin(twiClock400kHz);
+  if ( i2cStat != 0 ) {
+    Serial.println("ERROR EEPROM");
+    Serial.println(i2cStat,DEC);
+    l_bstatus=false;
+
+  }
+  else
+  {
+    Serial.println("EEPROM OK");
+    l_bstatus=true;
+  }
+
+
+  if (l_bstatus==true)
+  {
+
+    byte myData[10];
+    memset(myData,'\0',10);
+    myData[0] = _Sleepy_time_W.uihour;
+    myData[1] = _Sleepy_time_W.uiminute;
+    myData[2] = _Wakeup_time_W.uihour;
+    myData[3] = _Wakeup_time_W.uiminute;
+    myData[4] = _Sleepy_time_WE.uihour;
+    myData[5] = _Sleepy_time_WE.uiminute;
+    myData[6] = _Wakeup_time_WE.uihour;
+    myData[7] = _Wakeup_time_WE.uiminute;
+    myData[8] = CRC8(myData,8);
+    //write 10 bytes starting at location 42
+    i2cStat = myEEPROM.write(1, myData, 9);
+    if ( i2cStat != 0 ) {
+      //there was a problem
+      if ( i2cStat == EEPROM_ADDR_ERR) {
+        Serial.println("Write EEPROM Bad addr");
+        l_bstatus=false;
+      }
+      else {
+        //
+        Serial.println("Write some other I2C error");
+        l_bstatus=false;
+      }
+    }
+    else
+    {
+
+      Serial.println("EEPROM Write OK");
+      l_bstatus=true;
+
+    }
+  }
+
+
+
+  return l_bstatus;
+}
+bool GetConfigurationFromEEPROM()
+{
+  bool l_bstatus=false;
+
+  extEEPROM myEEPROM(kbits_32, 1, 4,0x57);
+  byte i2cStat = myEEPROM.begin(twiClock400kHz);
+  if ( i2cStat != 0 ) {
+    Serial.println("ERROR EEPROM");
+    Serial.println(i2cStat,DEC);
+    l_bstatus=false;
+
+  }
+  else
+  {
+    Serial.println("EEPROM OK");
+    l_bstatus=true;
+  }
+
+
+  if (l_bstatus==true)
+  {
+
+    byte myDataR[10];
+    memset(myDataR,'\0',10);
+    //read 8 bytes starting at location 1
+    i2cStat = myEEPROM.read(1, myDataR, 9);
+    if ( i2cStat != 0 ) {
+      //there was a problem
+      if ( i2cStat == EEPROM_ADDR_ERR) {
+        Serial.println("Read EEPROM Bad addr");
+        l_bstatus=false;
+      }
+      else {
+        //
+        Serial.println("Read some other I2C error");
+        l_bstatus=false;
+      }
+    }
+    else
+    {
+
+      Serial.println("EEPROM Read OK");
+      l_bstatus=true;
+
+      //check the CRC
+      if (CRC8(myDataR,8) == myDataR[8])
+      {
+        l_bstatus=true;
+        Serial.println("EEPROM DATA OK");
+        //ok
+        _Sleepy_time_W.uihour=myDataR[0];
+        _Sleepy_time_W.uiminute=myDataR[1];
+        _Wakeup_time_W.uihour=myDataR[2];
+        _Wakeup_time_W.uiminute=myDataR[3];
+
+        _Sleepy_time_WE.uihour=myDataR[4];
+        _Sleepy_time_WE.uiminute=myDataR[5];
+        _Wakeup_time_WE.uihour=myDataR[6];
+        _Wakeup_time_WE.uiminute=myDataR[7];
+
+
+      }
+      else //default values
+      {
+        l_bstatus=false;
+        Serial.println("EEPROM DATA KO");
+        Serial.println(CRC8(myDataR,8),HEX);
+        Serial.println(myDataR[8]);
+
+        _Sleepy_time_W.uihour=20;
+        _Sleepy_time_W.uiminute=30;
+        _Wakeup_time_W.uihour=7;
+        _Wakeup_time_W.uiminute=30;
+
+        _Sleepy_time_WE.uihour=21;
+        _Sleepy_time_WE.uiminute=00;
+        _Wakeup_time_WE.uihour=8;
+        _Wakeup_time_WE.uiminute=30;
+
+        //Set Default value to EEPROM
+        if (SetConfigurationToEEPROM()==true)
+        {
+          GetConfigurationFromEEPROM();
+          l_bstatus=true;
+
+
+        }
+
+
+      }
+
+
+    }
+  }
+
+
+
+  return l_bstatus;
+}
+
+
+
 
 bool IsDst(ts t)
 {
@@ -160,7 +341,7 @@ void setLED(bool bSleepy_Mode)
   {
 
     //colorWipe(strip.Color(0, 1, 150),0);
-    
+
     strip.setPixelColor(0, strip.Color(0, 1, 150)); // Moderately bright green color.
 
     strip.show(); // This sends the updated pixel color to the hardware.
@@ -218,9 +399,9 @@ void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpCl
 
 
   }
-  
+
   //Set EEPROM with the new sleep configuration
-  
+
   MAJSleepAndWakeHours();
 
 
@@ -232,70 +413,15 @@ void setup()
   DS3231_init(DS3231_INTCN);
   memset(recv, 0, BUFF_MAX);
   Serial.println("GET time");
-  
-  //  
-/*  extEEPROM myEEPROM(kbits_32, 1, 4,0x57);
-byte i2cStat = myEEPROM.begin(twiClock400kHz);
-if ( i2cStat != 0 ) {
-    Serial.println("ERROR EEPROM");
-    Serial.println(i2cStat,DEC);
-}
-else
-  Serial.println("EEPROM OK");
-  
-  byte myData[10];
-  myData[0] = 0x12;
-  myData[1] = 0x34;
-//write 10 bytes starting at location 42
- i2cStat = myEEPROM.write(1, myData, 2);
-if ( i2cStat != 0 ) {
-    //there was a problem
-    if ( i2cStat == EEPROM_ADDR_ERR) {
-        Serial.println("Write EEPROM Bad addr");
-    }
-    else {
-        //
-        Serial.println("Write some other I2C error");
-    }
-}
 
-byte myDataR[10];
-memset(myDataR,'\0',10);
-//read 10 bytes starting at location 42
- i2cStat = myEEPROM.read(1, myDataR, 2);
-if ( i2cStat != 0 ) {
-    //there was a problem
-    if ( i2cStat == EEPROM_ADDR_ERR) {
-         Serial.println("Read EEPROM Bad addr");
-    }
-    else {
-        Serial.println("Read some other I2C error");
-    }
-}
-Serial.println(myDataR[0],HEX);  
-Serial.println(myDataR[1],HEX);  
-*/  
-  
-  
+  GetConfigurationFromEEPROM();
+
   DS3231_get(&t);
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
   //Reading the EEPROM to get the last sleep configuration.
-  
-  
-  
-  //else default value;
 
-  _Sleepy_time_W.uihour=20;
-  _Sleepy_time_W.uiminute=30;
-  _Wakeup_time_W.uihour=7;
-  _Wakeup_time_W.uiminute=30;
-
-  _Sleepy_time_WE.uihour=21;
-  _Sleepy_time_WE.uiminute=00;
-  _Wakeup_time_WE.uihour=8;
-  _Wakeup_time_WE.uiminute=30;
 
   bSleepy_activated = false;
   bTurnOnLED = true;
@@ -408,7 +534,7 @@ void parse_cmd(char *cmd, int cmdsize)
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // ss, mm, hh, dd
     }
     boolean flags[5] = {
-      0, 0, 0, 0, 0         };
+      0, 0, 0, 0, 0             };
     DS3231_set_a1(time[0], time[1], time[2], time[3], flags);
     DS3231_get_a1(&buff[0], 59);
     Serial.println(buff);
@@ -420,7 +546,7 @@ void parse_cmd(char *cmd, int cmdsize)
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
     }
     boolean flags[5] = {
-      0, 0, 0, 0         };
+      0, 0, 0, 0             };
     DS3231_set_a2(time[0], time[1], time[2], flags);
     DS3231_get_a2(&buff[0], 59);
     Serial.println(buff);
@@ -499,6 +625,7 @@ void parse_cmd(char *cmd, int cmdsize)
     l_WakeUp.uihour = time[1];
 
     setNewSleepAndWakeHours(l_Sleep,l_WakeUp,l_TypeClock);
+    SetConfigurationToEEPROM();
     snprintf(buff, BUFF_MAX, "W:Sleep:%02d:%02d\nW:WakeUp:%02d:%02d\nWE:Sleep:%02d:%02d\nWE:WakeUp:%02d:%02d\n", _Sleepy_time_W.uihour, _Sleepy_time_W.uiminute,_Wakeup_time_W.uihour, _Wakeup_time_W.uiminute,_Sleepy_time_WE.uihour, _Sleepy_time_WE.uiminute,_Wakeup_time_WE.uihour, _Wakeup_time_WE.uiminute);
     Serial.println(buff);
   }
@@ -509,5 +636,6 @@ void parse_cmd(char *cmd, int cmdsize)
     Serial.println(cmd[0], DEC);
   }
 }
+
 
 
