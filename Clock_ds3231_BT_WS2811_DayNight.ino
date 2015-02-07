@@ -4,12 +4,27 @@
 #include "rtc_ds3231.h"
 #include "common.h"
 #include <extEEPROM.h>    //http://github.com/JChristensen/extEEPROM/tree/dev
-
-
-
-
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
+
+#include "DHT.h"
+ 
+#define DHTPIN 2     // what pin we're connected to
+ 
+// Uncomment whatever type you're using!
+//#define DHTTYPE DHT11   // DHT 11
+#define DHTTYPE DHT22   // DHT 22  (AM2302)
+//#define DHTTYPE DHT21   // DHT 21 (AM2301)
+ 
+// Connect pin 1 (on the left) of the sensor to +5V
+// Connect pin 2 of the sensor to whatever your DHTPIN is
+// Connect pin 4 (on the right) of the sensor to GROUND
+// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
+ 
+DHT dht(DHTPIN, DHTTYPE);
+
+
+
 #define PIN 7
 
 // Parameter 1 = number of pixels in strip
@@ -61,6 +76,383 @@ byte CRC8(const byte *data, byte len) {
   return crc;
 }
 
+const byte TX_PIN = 12;
+
+const unsigned long TIME = 512;
+const unsigned long TWOTIME = TIME*2;
+
+#define SEND_HIGH() digitalWrite(TX_PIN, HIGH)
+#define SEND_LOW() digitalWrite(TX_PIN, LOW)
+float h = 0;
+float temp = 0; // Read temperature as Celsius
+float f = 0; // Read temperature as Fahrenheit
+float hi = 0;
+float _previous_hi = 0;
+float _previous_h = 0;
+float _previous_f = 0;
+float _previous_t = 0;
+long  previousMillis  =   0 ;   // will store last time LED was updated
+unsigned   long  currentMillis=0;
+#define DELAY_MEASURE 120000		//1min
+
+// Buffer for Oregon message
+#ifdef THN132N
+byte OregonMessageBuffer[8];
+#elif defined(BTHR968)
+byte OregonMessageBuffer[10];
+#else
+byte OregonMessageBuffer[9];
+#endif
+
+/**
+* \brief    Send logical "0" over RF
+* \details  azero bit be represented by an off-to-on transition
+* \         of the RF signal at the middle of a clock period.
+* \         Remenber, the Oregon v2.1 protocol add an inverted bit first
+*/
+inline void sendZero(void)
+{
+	SEND_HIGH();
+	delayMicroseconds(TIME);
+	SEND_LOW();
+	delayMicroseconds(TWOTIME);
+	SEND_HIGH();
+	delayMicroseconds(TIME);
+}
+
+/**
+* \brief    Send logical "1" over RF
+* \details  a one bit be represented by an on-to-off transition
+* \         of the RF signal at the middle of a clock period.
+* \         Remenber, the Oregon v2.1 protocol add an inverted bit first
+*/
+inline void sendOne(void)
+{
+	SEND_LOW();
+	delayMicroseconds(TIME);
+	SEND_HIGH();
+	delayMicroseconds(TWOTIME);
+	SEND_LOW();
+	delayMicroseconds(TIME);
+}
+
+/**
+* Send a bits quarter (4 bits = MSB from 8 bits value) over RF
+*
+* @param data Source data to process and sent
+*/
+
+/**
+* \brief    Send a bits quarter (4 bits = MSB from 8 bits value) over RF
+* \param    data   Data to send
+*/
+inline void sendQuarterMSB(const byte data)
+{
+	(bitRead(data, 4)) ? sendOne() : sendZero();
+	(bitRead(data, 5)) ? sendOne() : sendZero();
+	(bitRead(data, 6)) ? sendOne() : sendZero();
+	(bitRead(data, 7)) ? sendOne() : sendZero();
+}
+
+/**
+* \brief    Send a bits quarter (4 bits = LSB from 8 bits value) over RF
+* \param    data   Data to send
+*/
+inline void sendQuarterLSB(const byte data)
+{
+	(bitRead(data, 0)) ? sendOne() : sendZero();
+	(bitRead(data, 1)) ? sendOne() : sendZero();
+	(bitRead(data, 2)) ? sendOne() : sendZero();
+	(bitRead(data, 3)) ? sendOne() : sendZero();
+}
+
+/******************************************************************/
+/******************************************************************/
+/******************************************************************/
+
+/**
+* \brief    Send a buffer over RF
+* \param    data   Data to send
+* \param    size   size of data to send
+*/
+void sendData(byte *data, byte size)
+{
+	for(byte i = 0; i < size; ++i)
+	{
+		sendQuarterLSB(data[i]);
+		sendQuarterMSB(data[i]);
+	}
+}
+
+/**
+* \brief    Send an Oregon message
+* \param    data   The Oregon message
+*/
+void sendOregon(byte *data, byte size)
+{
+	sendPreamble();
+	//sendSync();
+	sendData(data, size);
+	sendPostamble();
+}
+
+/**
+* \brief    Send preamble
+* \details  The preamble consists of 16 "1" bits
+*/
+inline void sendPreamble(void)
+{
+	byte PREAMBLE[]={
+		0xFF,0xFF  };
+	sendData(PREAMBLE, 2);
+}
+
+/**
+* \brief    Send postamble
+* \details  The postamble consists of 8 "0" bits
+*/
+inline void sendPostamble(void)
+{
+#ifdef THN132N
+	sendQuarterLSB(0x00);
+#else
+	byte POSTAMBLE[]={
+		0x00  };
+	sendData(POSTAMBLE, 1);
+#endif
+}
+
+/**
+* \brief    Send sync nibble
+* \details  The sync is 0xA. It is not use in this version since the sync nibble
+* \         is include in the Oregon message to send.
+*/
+inline void sendSync(void)
+{
+	sendQuarterLSB(0xA);
+}
+
+/******************************************************************/
+/******************************************************************/
+/******************************************************************/
+
+/**
+* \brief    Set the sensor type
+* \param    data       Oregon message
+* \param    type       Sensor type
+*/
+inline void setType(byte *data, byte* type)
+{
+	data[0] = type[0];
+	data[1] = type[1];
+}
+
+/**
+* \brief    Set the sensor channel
+* \param    data       Oregon message
+* \param    channel    Sensor channel (0x10, 0x20, 0x30)
+*/
+inline void setChannel(byte *data, byte channel)
+{
+	data[2] = channel;
+}
+
+/**
+* \brief    Set the sensor ID
+* \param    data       Oregon message
+* \param    ID         Sensor unique ID
+*/
+inline void setId(byte *data, byte ID)
+{
+	data[3] = ID;
+}
+void setLastBaro(byte *data, byte lastbyte)
+{
+	data[9] = lastbyte;
+}
+
+/**
+* \brief    Set the sensor battery level
+* \param    data       Oregon message
+* \param    level      Battery level (0 = low, 1 = high)
+*/
+void setBatteryLevel(byte *data, byte level)
+{
+	if(!level) data[4] = 0x0C; //low level
+	else data[4] = 0x00;
+}
+
+/**
+* \brief    Set the sensor temperature
+* \param    data       Oregon message
+* \param    temp       the temperature
+*/
+void setTemperature(byte *data, float temp)
+{
+	// Set temperature sign
+	if(temp < 0)
+	{
+		data[6] = 0x08;
+		temp *= -1;
+	}
+	else
+	{
+		data[6] = 0x00;
+	}
+
+	// Determine decimal and float part
+	int tempInt = (int)temp;
+	int td = (int)(tempInt / 10);
+	int tf = (int)round((float)((float)tempInt/10 - (float)td) * 10);
+
+	int tempFloat =  (int)round((float)(temp - (float)tempInt) * 10);
+
+	// Set temperature decimal part
+	data[5] = (td << 4);
+	data[5] |= tf;
+
+	// Set temperature float part
+	data[4] |= (tempFloat << 4);
+}
+
+/**
+* \brief    Set the sensor humidity
+* \param    data       Oregon message
+* \param    hum        the humidity
+*/
+void setHumidity(byte* data, byte hum)
+{
+	data[7] = (hum/10);
+	data[6] |= (hum - data[7]*10) << 4;
+}
+
+/**
+* \brief    Sum data for checksum
+* \param    count      number of bit to sum
+* \param    data       Oregon message
+*/
+int Sum(byte count, const byte* data)
+{
+	int s = 0;
+
+	for(byte i = 0; i<count;i++)
+	{
+		s += (data[i]&0xF0) >> 4;
+		s += (data[i]&0xF);
+	}
+
+	if(int(count) != count)
+	s += (data[count]&0xF0) >> 4;
+
+	return s;
+}
+
+/**
+* \brief    Calculate checksum
+* \param    data       Oregon message
+*/
+void calculateAndSetChecksum(byte* data)
+{
+#ifdef THN132N
+	int s = ((Sum(6, data) + (data[6]&0xF) - 0xa) & 0xff);
+
+	data[6] |=  (s&0x0F) << 4;
+	data[7] =  (s&0xF0) >> 4;
+#elif defined(BTHR968)
+
+	data[9] = 0x31;
+#else
+	data[8] = ((Sum(8, data) - 0xa) & 0xFF);
+#endif
+}
+void GetDataAndSend()
+{
+	Serial.print("\nGetDataAndSend\n");
+	// Wait a few seconds between measurements.
+	//if (firstdata == true)
+	dht.begin();
+	delay(2000);
+	//Narcoleptic.delay(2000);
+	char status;
+
+	// Reading temperature or humidity takes about 250 milliseconds!
+	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+	h = dht.readHumidity();
+	// Read temperature as Celsius
+	temp = dht.readTemperature();
+	// Read temperature as Fahrenheit
+	//f = dht.readTemperature(true);
+
+	// Check if any reads failed and exit early (to try again).
+	if (isnan(h) || isnan(temp) /*|| isnan(f)*/) {
+		Serial.println("Failed to read from DHT sensor!");
+		return;
+	}
+
+
+
+
+	// Compute heat index
+	// Must send in temp in Fahrenheit!
+	//hi = dht.computeHeatIndex(f, h);
+
+	Serial.print("Humidity: ");
+	Serial.print(h);
+	Serial.print(" %\t");
+	Serial.print("Temperature: ");
+	Serial.print(temp);
+	Serial.print(" °C ");
+	/*Serial.print(f);
+	Serial.print(" °F\t");*/
+	//Serial.print("Heat index: ");
+	//Serial.print(hi);
+	//Serial.println(" °F\n");
+
+	digitalWrite(DHTPIN, LOW);
+
+	if (((unsigned int) h!=(unsigned int) _previous_h)||(temp!=_previous_t))
+	{
+		Serial.print("GetDataAndSend : new data\n");
+
+		// Get Temperature, humidity and battery level from sensors
+		// (ie: 1wire DS18B20 for température, ...)
+		/*if (stateOfCharge < BATT_CRITIC_LEVEL)
+			setBatteryLevel(OregonMessageBuffer, 0); // 0 : low, 1 : high
+		else*/
+			setBatteryLevel(OregonMessageBuffer, 1); // 0 : low, 1 : high
+		setTemperature(OregonMessageBuffer, temp);
+                #ifndef THN132N
+		// Set Humidity
+		setHumidity(OregonMessageBuffer, h);
+	#endif
+		// Calculate the checksum
+		calculateAndSetChecksum(OregonMessageBuffer);
+
+		// Show the Oregon Message
+		for (byte i = 0; i < sizeof(OregonMessageBuffer); ++i)   {
+			Serial.print(OregonMessageBuffer[i] >> 4, HEX);
+			Serial.print(OregonMessageBuffer[i] & 0x0F, HEX);
+		}
+
+		// Send the Message over RF
+		sendOregon(OregonMessageBuffer, sizeof(OregonMessageBuffer));
+		// Send a "pause"
+		SEND_LOW();
+		delayMicroseconds(TWOTIME*8);
+		// Send a copie of the first message. The v2.1 protocol send the
+		// message two time
+		sendOregon(OregonMessageBuffer, sizeof(OregonMessageBuffer));
+
+		// Wait for 30 seconds before send a new message
+		SEND_LOW();
+		
+		_previous_h=h;
+		_previous_t=temp;
+	}
+	else
+		Serial.print("GetDataAndSend : same data\n");	
+
+}
 //EEPROM functions
 bool SetConfigurationToEEPROM()
 {
@@ -406,6 +798,7 @@ void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpCl
 
 
 }
+
 void setup()
 {
   Serial.begin(9600);
@@ -413,14 +806,42 @@ void setup()
   DS3231_init(DS3231_INTCN);
   memset(recv, 0, BUFF_MAX);
   Serial.println("GET time");
-
+  
+  //Reading the EEPROM to get the last sleep configuration.
   GetConfigurationFromEEPROM();
 
   DS3231_get(&t);
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
-  //Reading the EEPROM to get the last sleep configuration.
+  
+Serial.println("DHTxx test!");
+	Serial.println("\n[Oregon V2.1 encoder]");
+
+	SEND_LOW();
+
+#ifdef THN132N
+	// Create the Oregon message for a temperature only sensor (TNHN132N)
+	byte ID[] = {
+		0xEA,0x4C  };
+#elif defined(BTHR968)
+
+	byte ID[] = {
+		0x5A,0x6D  };
+#else
+	// Create the Oregon message for a temperature/humidity sensor (THGR2228N)
+	byte ID[] = {
+		0x1A,0x2D  };
+#endif
+	setType(OregonMessageBuffer, ID);
+
+#ifdef BTHR968
+	setChannel(OregonMessageBuffer, 0x4);
+	setId(OregonMessageBuffer, 0x7A);
+#else
+	setChannel(OregonMessageBuffer, 0x20);
+	setId(OregonMessageBuffer, 0xBC);
+#endif
 
 
   bSleepy_activated = false;
@@ -443,6 +864,8 @@ void setup()
 #endif
   }
   setLED(bSleepy_activated);
+  
+  GetDataAndSend();
 }
 
 void loop()
@@ -451,13 +874,22 @@ void loop()
   char buff[BUFF_MAX];
   unsigned long now = millis();
 
-
+  
+        
+	if (( now  -  previousMillis  >  DELAY_MEASURE ))
+	{
+		
+		
+		previousMillis  =  now ;
+		GetDataAndSend();
+ 	
+	}
   // show time once in a while
   if ((now - prev > interval) && (Serial.available() <= 0)) {
     DS3231_get(&t);
     IsSleepyOrWakeUpTime();
     setLED(bSleepy_activated);
-
+    
     /*snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,
      t.mon, t.mday, t.hour, t.min, t.sec);
 
@@ -466,7 +898,7 @@ void loop()
 
     prev = now;
   }
-
+  
   if (Serial.available() > 0) {
     in = Serial.read();
 
