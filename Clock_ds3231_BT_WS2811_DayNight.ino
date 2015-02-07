@@ -433,7 +433,7 @@ void GetDataAndSend()
 			Serial.print(OregonMessageBuffer[i] >> 4, HEX);
 			Serial.print(OregonMessageBuffer[i] & 0x0F, HEX);
 		}
-
+                Serial.print("\n");
 		// Send the Message over RF
 		sendOregon(OregonMessageBuffer, sizeof(OregonMessageBuffer));
 		// Send a "pause"
@@ -936,15 +936,21 @@ void parse_cmd(char *cmd, int cmdsize)
 
   // TssmmhhWDDMMYYYY aka set time
   if (cmd[0] == 84 && cmdsize == 16) {
-    //T355720619112011
+    //T355720619112011 Sunday=1 Saturday=7
     t.sec = inp2toi(cmd, 1);
     t.min = inp2toi(cmd, 3);
     t.hour = inp2toi(cmd, 5);
-    t.wday = inp2toi(cmd, 7);
+    //t.wday = inp2toi(cmd, 7);
+    //Fixed : the day of the week is only on 1 byte.
+    t.wday = cmd[7]-48;
     t.mday = inp2toi(cmd, 8);
     t.mon = inp2toi(cmd, 10);
     t.year = inp2toi(cmd, 12) * 100 + inp2toi(cmd, 14);
     DS3231_set(t);
+    snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d day:%d", t.year,
+    t.mon, t.mday, t.hour, t.min, t.sec,t.wday);
+    Serial.println(buff);
+    
     Serial.println("OK");
   }
   else if (cmd[0] == 49 && cmdsize == 1) {  // "1" get alarm 1
@@ -1022,8 +1028,8 @@ void parse_cmd(char *cmd, int cmdsize)
     Serial.println(DS3231_get_sreg(), DEC);
   }
   else if (cmd[0] == 84 && cmdsize == 1) {  // "T" - display
-    snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,
-    t.mon, t.mday, t.hour, t.min, t.sec);
+    snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d day:%d", t.year,
+    t.mon, t.mday, t.hour, t.min, t.sec,t.wday);
     Serial.println(buff);
   }
   else if (cmd[0] == 85 && cmdsize == 1) {  // "U" - Get Actual Clocks Configuration
