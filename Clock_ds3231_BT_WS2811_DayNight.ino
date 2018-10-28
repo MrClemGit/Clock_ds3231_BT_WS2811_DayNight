@@ -5,9 +5,25 @@
 #include "common.h"
 #include <extEEPROM.h>    //http://github.com/JChristensen/extEEPROM/tree/dev
 #include <Adafruit_NeoPixel.h>
-#include <avr/power.h>
+//#include <avr/power.h>
 
 #include "DHT.h"
+
+#include <TimerOne.h>
+#include "TM1637.h"
+#define ON 1
+#define OFF 0
+int8_t TimeDisp[] = {0x00,0x00,0x00,0x00};
+unsigned char ClockPoint = 1;
+unsigned char Update;
+unsigned char halfsecond = 0;
+unsigned char second;
+unsigned char minute = 0;
+unsigned char hour = 12;
+#define CLK 3
+//pins definitions for TM1637 and can be changed to other ports    
+#define DIO 4
+TM1637 tm1637(CLK,DIO);
  
 #define DHTPIN 2     // what pin we're connected to
  
@@ -91,8 +107,9 @@ float _previous_hi = 0;
 float _previous_h = 0;
 float _previous_f = 0;
 float _previous_t = 0;
-long  previousMillis  =   0 ;   // will store last time LED was updated
-unsigned   long  currentMillis=0;
+unsigned long  previousMillis  =   0 ;   // will store last time LED was updated
+unsigned long previousMillisDisplay =0;
+unsigned long  currentMillis=0;
 #define DELAY_MEASURE 120000		//1min
 
 // Buffer for Oregon message
@@ -619,6 +636,8 @@ bool GetConfigurationFromEEPROM()
 
 bool IsDst(ts t)
 {
+  
+  bool l_bDST=false;
   if (t.mon < 3 || t.mon > 10)  return false;
   if (t.mon > 3 && t.mon < 10)  return true;
 
@@ -627,25 +646,25 @@ bool IsDst(ts t)
   if ((t.mon == 3)&&(t.wday == 1) &&(t.mday > 25) &&(t.hour >= 3))
   {
 
-    return true;
+    l_bDST= true;
   }
   else
   {
-    return false;
+    l_bDST= false;
   }
   if ((t.mon == 10)&&(t.wday == 1)&&(t.mday > 24) &&(t.hour >= 3))
   {
 #ifdef SERIAL_OUTPUT
     Serial.println("DST OFF\n");
 #endif
-    return false;
+    l_bDST= false;
   }
   else
   {
 #ifdef SERIAL_OUTPUT
     Serial.println("DST ON\n");
 #endif
-    return true;
+    l_bDST= true;
   }
   //return false; // this line never gonna happend
 }
@@ -734,10 +753,10 @@ void setLED(bool bSleepy_Mode)
 
     //colorWipe(strip.Color(0, 1, 150),0);
 
-    strip.setPixelColor(0, strip.Color(0, 1, 150)); // Moderately bright green color.
+    strip.setPixelColor(0, strip.Color(0, 1, 150)); // blue color.
 
     strip.show(); // This sends the updated pixel color to the hardware.
-
+    tm1637.set(0);
   }
   else
   {
@@ -748,6 +767,7 @@ void setLED(bool bSleepy_Mode)
       strip.setPixelColor(0, strip.Color(150, 20, 20)); // Moderately bright green color.
 
       strip.show(); // This sends the updated pixel color to the hardware.
+      tm1637.set(2);
     }
     else
     {
@@ -798,7 +818,32 @@ void setNewSleepAndWakeHours(_customtime iNewSleepClock,_customtime iNewWakeUpCl
 
 
 }
-
+void TimingISR()
+{
+  //Serial.println("TimingISR");
+  halfsecond ++;
+  Update = ON;
+  if(halfsecond == 2){
+    second = t.sec;
+    minute = t.min;
+    hour = t.hour;
+    halfsecond = 0;  
+  }
+ // Serial.println(second);
+  ClockPoint = (~ClockPoint) & 0x01;
+}
+void TimeUpdate(void)
+{
+  //Serial.println("TimeUpdate");
+  if(ClockPoint)tm1637.point(POINT_ON);
+  else tm1637.point(POINT_OFF); 
+  TimeDisp[0] = hour / 10;
+  TimeDisp[1] = hour % 10;
+  TimeDisp[2] = minute / 10;
+  TimeDisp[3] = minute % 10;
+  Update = OFF;
+  //Serial.println("TimeUpdate OUT");
+}
 void setup()
 {
   Serial.begin(9600);
@@ -814,6 +859,13 @@ void setup()
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
+  tm1637.set();
+  tm1637.init();
+  Timer1.initialize(500000);//timing for 500ms
+  Timer1.attachInterrupt(TimingISR);//declare the interrupt serve routine:TimingISR
+  second = t.sec;
+  minute = t.min;
+  hour = t.hour;
   
 Serial.println("DHTxx test!");
 	Serial.println("\n[Oregon V2.1 encoder]");
@@ -850,6 +902,7 @@ Serial.println("DHTxx test!");
   if ((t.hour >= _Sleepy_time.uihour) || (t.hour <= _Wakeup_time.uihour))
   {
     bSleepy_activated = true;
+    tm1637.set(0);
 
 #ifdef SERIAL_OUTPUT
     Serial.println("Allumer la lumière de nuit");
@@ -858,6 +911,7 @@ Serial.println("DHTxx test!");
   else
   {
     bSleepy_activated = false;
+    tm1637.set(2);
 
 #ifdef SERIAL_OUTPUT
     Serial.println("Allumer la lumière de réveil");
@@ -873,7 +927,19 @@ void loop()
   char in;
   char buff[BUFF_MAX];
   unsigned long now = millis();
-
+  
+  /*if (( now  -  previousMillisDisplay  >  500 ))
+  {
+    previousMillisDisplay  =  now ;
+    TimingISR();
+  
+  }*/
+  if(Update == ON)
+  {
+    //Serial.println("Update DISPLAY ON");
+    TimeUpdate();
+    tm1637.display(TimeDisp);
+  }
   
         
 	if (( now  -  previousMillis  >  DELAY_MEASURE ))
@@ -971,7 +1037,7 @@ void parse_cmd(char *cmd, int cmdsize)
     for (i = 0; i < 4; i++) {
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // ss, mm, hh, dd
     }
-    boolean flags[5] = {
+    uint8_t flags[5] = {
       0, 0, 0, 0, 0             };
     DS3231_set_a1(time[0], time[1], time[2], time[3], flags);
     DS3231_get_a1(&buff[0], 59);
@@ -983,7 +1049,7 @@ void parse_cmd(char *cmd, int cmdsize)
     for (i = 0; i < 4; i++) {
       time[i] = (cmd[2 * i + 1] - 48) * 10 + cmd[2 * i + 2] - 48; // mm, hh, dd
     }
-    boolean flags[5] = {
+    uint8_t flags[5] = {
       0, 0, 0, 0             };
     DS3231_set_a2(time[0], time[1], time[2], flags);
     DS3231_get_a2(&buff[0], 59);
@@ -1074,6 +1140,3 @@ void parse_cmd(char *cmd, int cmdsize)
     Serial.println(cmd[0], DEC);
   }
 }
-
-
-
